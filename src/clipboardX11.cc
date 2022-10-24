@@ -296,14 +296,14 @@ void* ClipLibX11::SetClipboardTextProc(void* data) {
     return nullptr;
 }
 
-// Sets data to be sent back on a request for the CLIPBOARD selection. Note that neither library or this function will take ownership of the given string.
+// Sets the string to be sent back on a request for the CLIPBOARD selection. Note that neither library or this function will take ownership of the given string.
 bool ClipLibX11::SetClipboardText(char* str) {
     
     pthread_mutex_lock(&DataMutex);
     if (ClipWindow == None) {
         ClipDisplay = XOpenDisplay(NULL);
         try {
-            TextLength = strlen(str) + 1;
+            TextLength = std::strlen(str);
             TextData = new char[TextLength];
             // TODO: Remove dynamic allocations for target data
             TargetData = new Atom[3];
@@ -328,9 +328,12 @@ bool ClipLibX11::SetClipboardText(char* str) {
         }
         return true;
     } else {
+        delete[] TextData;
+        TextLength = std::strlen(str);
+        TextData = new char[TextLength];
+        std::memcpy(TextData, str, TextLength);
         pthread_mutex_unlock(&DataMutex);
-        CleanupSetClipboard(str);
-        return SetClipboardText(str);
+        return true;
     }
 }
 
@@ -348,15 +351,17 @@ XSelectionEvent ClipLibX11::ConstructSelectionEvent(XSelectionRequestEvent event
 void ClipLibX11::Internal_SendClipboardText(XSelectionRequestEvent event, Display* display) {
     XSelectionEvent payload = ConstructSelectionEvent(event);
     payload.target = Utf8Atom;
-
+    pthread_mutex_lock(&DataMutex);
     XChangeProperty(display, event.requestor, event.property, XA_STRING, 8, PropModeReplace, (unsigned char*)TextData, (int)TextLength);
+    pthread_mutex_unlock(&DataMutex);
     XSendEvent(display, event.requestor, True, NoEventMask, (XEvent*)&payload);
 }
 
 void ClipLibX11::Internal_SendTargetData(XSelectionRequestEvent event, Display* display) {
     XSelectionEvent payload = ConstructSelectionEvent(event);
     payload.target = TargetAtom;
-
+    pthread_mutex_lock(&DataMutex);
     XChangeProperty(display, event.requestor, event.property, XA_ATOM, 32, PropModeReplace, (unsigned char*)TargetData, (int)TargetDataLength);
+    pthread_mutex_unlock(&DataMutex);
     XSendEvent(display, event.requestor, True, NoEventMask, (XEvent*)&payload);
 }
